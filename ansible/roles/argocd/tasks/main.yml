@@ -1,0 +1,36 @@
+# This playbook creates the argocd namespace, installs ArgoCD, and exposes it as a NodePort
+- name: Create argocd namespace
+  shell: kubectl create namespace argocd --kubeconfig {{ kubeconfig }}
+
+- name: Install ArgoCD using the official manifest
+  shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --kubeconfig {{ kubeconfig }}
+
+- name: Expose ArgoCD as NodePort
+  shell: |
+    kubectl patch svc argocd-server \
+      -n argocd \
+      -p '{"spec": {"type": "NodePort"}}' \
+      --type=merge \
+      --kubeconfig {{ kubeconfig }}
+  tags: test
+
+# --- Install ArgoCD CLI ---
+- name: Get latest ArgoCD version
+  shell: curl -L -s https://raw.githubusercontent.com/argoproj/argo-cd/stable/VERSION
+  register: argocd_version
+
+- name: Download ArgoCD CLI
+  shell: |
+    curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/download/v{{ argocd_version.stdout }}/argocd-linux-amd64
+  args:
+    creates: argocd-linux-amd64
+
+- name: Install ArgoCD CLI
+  shell: sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+  args:
+    creates: /usr/local/bin/argocd
+
+- name: Remove ArgoCD CLI binary
+  file:
+    path: argocd-linux-amd64
+    state: absent

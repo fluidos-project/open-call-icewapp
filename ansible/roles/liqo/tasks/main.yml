@@ -1,0 +1,82 @@
+- name: Detect system architecture
+  set_fact:
+    liqo_arch: "{{ liqo_arch_map[ansible_architecture] | default(ansible_architecture) }}"
+  tags: liqoctl
+
+- name: Check if liqoctl is already installed
+  command: liqoctl version
+  register: liqo_check
+  failed_when: false
+  changed_when: false
+  tags: liqoctl
+
+- name: Show liqoctl version output
+  debug:
+    var: liqo_check
+  tags: liqoctl
+
+- name: Download liqoctl if not installed
+  get_url:
+    url: "https://github.com/liqotech/liqo/releases/download/{{ liqo_version }}/liqoctl-linux-{{ liqo_arch }}.tar.gz"
+    dest: /tmp/liqoctl.tar.gz
+    mode: '0644'
+  when: liqo_check.rc != 0
+  become: true
+  tags: liqoctl
+
+- name: Extract liqoctl
+  unarchive:
+    src: /tmp/liqoctl.tar.gz
+    dest: /tmp
+    remote_src: yes
+  when: liqo_check.rc != 0
+  become: true
+  tags: liqoctl
+
+- name: Install liqoctl to /usr/local/bin
+  copy:
+    src: /tmp/liqoctl
+    dest: /usr/local/bin/liqoctl
+    mode: '0755'
+    owner: root
+    group: root
+    remote_src: yes
+  when: liqo_check.rc != 0
+  become: true
+  tags: liqoctl
+
+- name: Remove liqoctl .tar.gz file
+  file:
+    path: /tmp/liqoctl.tar.gz
+    state: absent
+  become: true
+  tags: liqoctl
+
+- name: Remove extracted liqoctl binary (temporary)
+  file:
+    path: /tmp/liqoctl
+    state: absent
+  become: true
+  tags: liqoctl
+
+- name: Check if Liqo is already installed in the cluster
+  shell: kubectl get ns liqo --no-headers --kubeconfig {{ kubeconfig }}
+  register: liqo_namespace_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Liqo with liqoctl
+  shell: |
+    liqoctl install k3s \
+      {{ liqo_clustername_version_map[liqo_version] }} {{ liqo_cluster_name }} \
+      --version {{ liqo_version }} \
+      --kubeconfig {{ kubeconfig }} \
+      --verbose \
+      --skip-confirm
+  when: liqo_namespace_check.rc != 0
+  register: liqo_install_output
+
+- name: Show Liqo installation output
+  debug:
+    var: liqo_install_output.stdout_lines
+  when: liqo_namespace_check.rc != 0

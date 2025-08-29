@@ -1,0 +1,33 @@
+- name: Get NodePort assigned to dashboard
+  shell: |
+    kubectl -n kubernetes-dashboard get svc kubernetes-dashboard-kong-proxy -o jsonpath="{.spec.ports[0].nodePort}" --kubeconfig {{ kubeconfig }}
+  register: dashboard_nodeport
+  tags: kubernetes_dashboard_access
+
+- name: Get token to authenticate in Dashboard
+  shell: kubectl -n kubernetes-dashboard create token admin-user --kubeconfig {{ kubeconfig }}
+  register: dashboard_token
+  tags: kubernetes_dashboard_access
+
+- name: Get node IP from inventory
+  set_fact:
+    dashboard_ip: "{{ hostvars[inventory_hostname]['ansible_host'] | default(inventory_hostname) }}"
+  delegate_to: localhost
+  run_once: true
+  tags: kubernetes_dashboard_access
+
+- name: Show dashboard access info
+  set_fact:
+    dashboard_info:
+      - "🌐 Access to Kubernetes Dashboard:"
+      - ""
+      - "🔗 URL: https://{{ dashboard_ip }}:{{ dashboard_nodeport.stdout }}"
+      - ""
+      - "🔑 Access token:"
+      - "{{ dashboard_token.stdout }}"
+  tags: kubernetes_dashboard_access
+
+- name: Show Kubernetes Dashboard access data
+  debug:
+    msg: "{{ dashboard_info }}"
+  tags: kubernetes_dashboard_access

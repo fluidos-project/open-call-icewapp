@@ -1,0 +1,12 @@
+- name: ICEWAPP testbed setup
+  hosts: consumer, provider
+  collections:
+    - community.kubernetes
+  roles:
+    - { role: k3s,                  tags: ['all', 'init-config', 'k3s'] }
+    - { role: helm,                 tags: ['all', 'init-config', 'helm'] }
+    - { role: kubernetes-dashboard, tags: ['all', 'init-config', 'dashboard'] }        
+    - { role: monitoring,           tags: ['all', 'extra-config', 'monitoring'] }
+    - { role: argocd,               tags: ['all'] }
+    - { role: liqo,                 tags: ['all'] }
+    - { role: fluidos,              tags: ['all'] }

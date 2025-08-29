@@ -1,0 +1,36 @@
+- name: Check if Helm is installed
+  command: helm version --short
+  register: helm_installed
+  failed_when: false
+  changed_when: false
+
+- name: Show installed Helm version
+  debug:
+    msg: "✅ Helm is installed: {{ helm_installed.stdout }}"
+  when: helm_installed.rc == 0
+
+- name: Install Helm if not installed
+  block:
+    - name: Download official Helm installation script
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0700'
+      become: true
+
+    - name: Run Helm installation script
+      shell: ./get_helm.sh
+      args:
+        chdir: /tmp
+        creates: /usr/local/bin/helm
+      become: true
+
+    - name: Verify Helm installation
+      command: helm version
+      register: helm_version_output
+
+    - name: Show installed Helm version
+      debug:
+        msg: "Helm installed successfully: {{ helm_version_output.stdout }}"
+
+  when: helm_installed.rc != 0

@@ -1,0 +1,53 @@
+- name: Get ForeignClusters (paired clusters)
+  shell: kubectl get foreignclusters --no-headers --kubeconfig {{ kubeconfig }}
+  register: foreignclusters_check
+  changed_when: false
+  failed_when: false
+  tags: uninstall
+
+- name: Fail if there are paired clusters
+  fail:
+    msg: "❌ There are active paired clusters. Cancel them before uninstalling Liqo."
+  when: foreignclusters_check.stdout_lines | length > 0
+  tags: test
+
+- name: Check if liqo namespace exists
+  shell: kubectl get ns liqo --no-headers --kubeconfig {{ kubeconfig }}
+  register: liqo_ns_check
+  failed_when: false
+  changed_when: false
+  tags: uninstall
+
+- name: Show full output of namespace check
+  debug:
+    var: liqo_ns_check
+  tags: test
+
+- name: Uninstall Liqo completely
+  shell: liqoctl uninstall --purge --skip-confirm --kubeconfig {{ kubeconfig }}
+  when: liqo_ns_check.rc == 0
+  register: liqo_uninstall_output
+  become: true
+  tags: uninstall
+
+- name: Delete all Liqo CRDs in case --purge did not work well
+  shell: kubectl get crds | grep liqo | awk '{print $1}' | xargs kubectl delete crd
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  become: true
+  ignore_errors: true
+  tags: uninstall
+
+- name: Show uninstall result
+  debug:
+    var: liqo_uninstall_output.stdout_lines
+  when: foreignclusters_check.stdout_lines | length == 0
+  tags: uninstall
+
+- name: Remove liqoctl binary if liqo namespace does NOT exist
+  file:
+    path: /usr/local/bin/liqoctl
+    state: absent
+  when: liqo_ns_check.rc != 0
+  become: true
+  tags: uninstall

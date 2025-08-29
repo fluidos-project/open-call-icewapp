@@ -1,0 +1,48 @@
+- name: Add Prometheus Community Helm repo
+  command: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  args:
+    creates: /root/.cache/helm/repository/prometheus-community-index.yaml
+
+- name: Add Grafana Helm repo
+  command: helm repo add grafana https://grafana.github.io/helm-charts
+  args:
+    creates: /root/.cache/helm/repository/grafana-index.yaml
+
+- name: Update Helm repos
+  command: helm repo update
+
+- name: Install Prometheus from localhost with correct KUBECONFIG
+  shell: |
+    helm upgrade --install prometheus prometheus-community/prometheus \
+      --namespace "{{ monitoring_namespace }}" --create-namespace
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  run_once: true
+
+- name: Create marker file for Prometheus
+  file:
+    path: /var/lib/prometheus_installed
+    state: touch
+  become: true
+
+- name: Install Grafana from localhost with correct KUBECONFIG
+  shell: |
+    helm upgrade --install grafana grafana/grafana \
+      --namespace "{{ monitoring_namespace }}" --create-namespace \
+      --set service.type=NodePort \
+      --set adminPassword='admin' \
+      --set datasources."datasources.yaml".apiVersion=1 \
+      --set datasources."datasources.yaml".datasources[0].name=Prometheus \
+      --set datasources."datasources.yaml".datasources[0].type=prometheus \
+      --set datasources."datasources.yaml".datasources[0].url=http://prometheus-server.monitoring.svc.cluster.local \
+      --set datasources."datasources.yaml".datasources[0].access=proxy \
+      --set datasources."datasources.yaml".datasources[0].isDefault=true
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  run_once: true
+
+- name: Create marker file for Grafana
+  file:
+    path: /var/lib/grafana_installed
+    state: touch
+  become: true

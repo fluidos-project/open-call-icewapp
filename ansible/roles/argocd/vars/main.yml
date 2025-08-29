@@ -1,0 +1,2 @@
+# Path to the kubeconfig file used for cluster access
+kubeconfig: /etc/rancher/k3s/k3s.yaml

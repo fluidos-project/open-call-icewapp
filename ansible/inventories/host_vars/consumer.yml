@@ -1,0 +1,13 @@
+ansible_host: <NODE-IP>
+ansible_user: <NODE-LINUX-USER>
+ansible_ssh_private_key_file: </root/.ssh/ansible_consumer> # path to the private key
+ansible_become_password: <NODE-LINUX-PASSWORD>
+
+k3s_node_name: consumer
+liqo_cluster_name: consumer 
+
+fluidos_version: 0.1.1
+rear_port: 32000
+enable_local_discovery: true
+third_octect: 10
+net_interface: ens33 # Check your network interface first

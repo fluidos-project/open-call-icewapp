@@ -1,0 +1,224 @@
+# This playbook downloads and installs the FLUIDOS Node, labels the node, installs Multus, and deploys the Helm chart.
+- name: Download FLUIDOS Node ZIP file
+  get_url:
+    url: https://github.com/fluidos-project/node/archive/refs/tags/v0.1.1.zip
+    dest: /tmp/v0.1.1.zip
+
+- name: Unzip the ZIP file
+  unarchive:
+    src: /tmp/v0.1.1.zip
+    dest: /tmp/
+    remote_src: yes
+
+- name: Remove the ZIP file
+  file:
+    path: /tmp/v0.1.1.zip
+    state: absent
+
+- name: Remove /tmp/node folder if it already existed
+  file:
+    path: /tmp/node
+    state: absent
+  ignore_errors: true
+
+- name: Rename extracted folder
+  command: mv /tmp/node-0.1.1 /tmp/node
+  args:
+    removes: /tmp/node-0.1.1
+
+- name: Label node as worker
+  shell: kubectl label node {{ k3s_node_name }} node-role.fluidos.eu/worker=true --kubeconfig {{ kubeconfig }}
+  tags: label_node
+
+- name: Label node as resources
+  shell: kubectl label node {{ k3s_node_name }} node-role.fluidos.eu/resources=true --kubeconfig {{ kubeconfig }}
+  tags: label_node
+
+- name: Check nodes labeled as worker
+  ansible.builtin.shell: |
+    kubectl get nodes -l node-role.fluidos.eu/worker=true --kubeconfig {{ kubeconfig }}
+  register: worker_nodes
+  tags: test_label_node
+
+- name: Show nodes labeled as worker
+  ansible.builtin.debug:
+    var: worker_nodes.stdout_lines
+  tags: label_node
+
+- name: Check nodes labeled as resources
+  ansible.builtin.shell: |
+    kubectl get nodes -l node-role.fluidos.eu/resources=true --kubeconfig {{ kubeconfig }}
+  register: resources_nodes
+  tags: label_node
+
+- name: Show nodes labeled as resources
+  ansible.builtin.debug:
+    var: resources_nodes.stdout_lines
+  tags: label_node
+
+- name: Ensure node is labeled as worker
+  ansible.builtin.set_fact:
+    worker_node_matched: "{{ k3s_node_name in worker_nodes.stdout }}"
+  tags: test_label_node
+
+- name: Fail if node is not labeled as worker correctly
+  ansible.builtin.fail:
+    msg: "Node {{ k3s_node_name }} is not correctly labeled as 'worker'."
+  when: not worker_node_matched
+  tags: test_label_node
+
+- name: Ensure node is labeled as resources
+  ansible.builtin.set_fact:
+    resources_node_matched: "{{ k3s_node_name in worker_nodes.stdout }}"
+  tags: test_label_node
+
+- name: Fail if node is not labeled as resources correctly
+  ansible.builtin.fail:
+    msg: "Node {{ k3s_node_name }} is not correctly labeled as 'resources'."
+  when: not resources_node_matched
+  tags: test_label_node
+
+- name: Check if Multus already exists
+  shell: kubectl get daemonset multus -n kube-system --kubeconfig {{ kubeconfig }}
+  register: multus_exists
+  ignore_errors: true
+  changed_when: false
+  tags: multus_exists
+
+- name: Check if multus-dhcp already exists
+  shell: kubectl get daemonset multus-dhcp -n kube-system --kubeconfig {{ kubeconfig }}
+  register: multus_dhcp_exists
+  ignore_errors: true
+  changed_when: false
+  tags: multus_exists
+
+- name: Message if Multus exists
+  ansible.builtin.debug:
+    msg: "Multus is already installed."
+  when: multus_exists.rc == 0 and multus_dhcp_exists.rc == 0
+  tags: multus_exists
+
+- name: Remove DHCP socket if exists (avoids conflicts when installing Multus)
+  ansible.builtin.command: rm -f /run/cni/dhcp.sock
+  become: true
+  args:
+    removes: /run/cni/dhcp.sock
+  when: multus_exists.rc != 0 or multus_dhcp_exists.rc != 0
+  tags: multus_exists
+
+- name: Apply Multus manifest
+  shell: |
+    cat <<EOF | kubectl apply -f - --kubeconfig {{ kubeconfig }}
+    {{ lookup('file', 'multus.yaml') }}
+    EOF
+  when: multus_exists.rc != 0 or multus_dhcp_exists.rc != 0
+  tags: multus_exists
+
+- name: Wait for multus-dhcp to be READY
+  ansible.builtin.shell: |
+    kubectl get daemonset multus-dhcp -n kube-system -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}'
+  register: multus_dhcp_status
+  until: multus_dhcp_status.stdout == "1/1" or multus_dhcp_status.stdout == "2/2"
+  retries: 10
+  delay: 15
+  changed_when: false
+  tags: test_multus
+
+- name: Wait for multus to be READY
+  ansible.builtin.shell: |
+    kubectl get daemonset multus -n kube-system -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}'
+  register: multus_status
+  until: multus_status.stdout == "1/1" or multus_status.stdout == "2/2"
+  retries: 10
+  delay: 15
+  changed_when: false
+  tags: test_multus
+
+- name: Load values file using lookup
+  set_fact:
+    helm_values_file: "{{ lookup('file', values_file_map[liqo_cluster_name]) }}"
+  tags: node
+
+- name: Save values file on remote host
+  copy:
+    content: "{{ helm_values_file }}"
+    dest: "/tmp/fluidos-values.yaml"
+  tags: node
+
+- name: Add FLUIDOS Helm repo
+  shell: helm repo add fluidos https://fluidos-project.github.io/node/
+  args:
+    creates: ~/.cache/helm/repository/fluidos-index.yaml
+  become: true
+  tags: node
+
+- name: Get Liqo server version
+  shell: >
+    liqoctl version --kubeconfig {{ kubeconfig }}
+  register: liqo_version_output
+  tags: liqo_health
+
+- name: Show Liqo server version
+  debug:
+    msg: "{{ liqo_version_output.stdout_lines[1] }}"
+  tags: liqo_health
+
+- name: Ensure server version was detected
+  fail:
+    msg: "Could not detect Liqo server version"
+  when: "'Server version: ' not in liqo_version_output.stdout"
+  tags: liqo_health
+
+- name: Wait for Liqo to be healthy (v0.10.3)
+  shell: liqoctl status --kubeconfig {{ kubeconfig }}
+  register: liqo_status_v0103
+  until: "'ERRO  some checks failed' not in liqo_status_v0103.stdout"
+  retries: 10
+  delay: 15
+  when: "'Server version: v0.10.3' in liqo_version_output.stdout"
+  changed_when: false
+  tags: liqo_health
+
+- name: Fail if Liqo v0.10.3 is not healthy after waiting
+  fail:
+    msg: "Liqo (v0.10.3) is not healthy after waiting. Aborting."
+  when: >
+    'Server version: v0.10.3' in liqo_version_output.stdout and
+    'ERRO  some checks failed' in liqo_status_v0103.stdout
+  tags: liqo_health
+
+- name: Wait for Liqo to be healthy (v1.0.0)
+  shell: liqoctl info --kubeconfig {{ kubeconfig }}
+  register: liqo_status_v100
+  until: "'✔    Liqo is healthy' in liqo_status_v100.stdout"
+  retries: 10
+  delay: 15
+  when: "'Server version: v1.0.0' in liqo_version_output.stdout"
+  changed_when: false
+  tags: liqo_health
+
+- name: Fail if Liqo v1.0.0 is not healthy after waiting
+  fail:
+    msg: "Liqo (v1.0.0) is not healthy after waiting. Aborting."
+  when: >
+    'Server version: v1.0.0' in liqo_version_output.stdout and
+    '✔    Liqo is healthy' not in liqo_status_v100.stdout
+  tags: liqo_health
+
+- name: Install FLUIDOS Node
+  shell: |
+    helm upgrade --install node fluidos/node \
+      -n fluidos --version {{ fluidos_version }} \
+      --create-namespace -f /tmp/fluidos-values.yaml \ \
+      --set networkManager.configMaps.nodeIdentity.ip={{ ansible_host }} \
+      --set rearController.service.gateway.nodePort.port={{ rear_port }} \
+      --set networkManager.config.enableLocalDiscovery={{ enable_local_discovery }} \
+      --set networkManager.config.address.thirdOctet={{ third_octect }} \
+      --set networkManager.config.netInterface={{ net_interface }} \
+      --kubeconfig {{ kubeconfig }} \
+      --wait \
+      --debug \
+      --v=2
+  become: true
+  register: dashboard_output
+  tags: node

@@ -1,0 +1,40 @@
+- name: Add Kubernetes Dashboard Helm repo
+  shell: helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+  args:
+    creates: /root/.cache/helm/repository/kubernetes-dashboard-index.yaml
+  become: true
+
+- name: Update Helm repos
+  shell: helm repo update
+  become: true
+
+- name: Install Kubernetes Dashboard
+  shell: |
+    helm upgrade --install kubernetes-dashboard kubernetes-dashboard/kubernetes-dashboard \
+      --create-namespace \
+      --namespace kubernetes-dashboard \
+      --kubeconfig {{ kubeconfig }}
+  become: true
+  register: dashboard_output
+
+- name: Show dashboard installation result
+  debug:
+    var: dashboard_output.stdout_lines
+
+- name: Expose Dashboard as NodePort without overwriting other settings
+  shell: |
+    kubectl patch svc kubernetes-dashboard-kong-proxy \
+      -n kubernetes-dashboard \
+      -p '{"spec": {"type": "NodePort"}}' \
+      --type=merge \
+      --kubeconfig {{ kubeconfig }}
+
+- name: Apply admin-user manifest from host, running on remote node
+  shell: |
+    cat <<EOF | kubectl apply -f - --kubeconfig {{ kubeconfig }}
+    {{ lookup('file', 'dashboard-adminuser.yaml') }}
+    EOF
+
+- name: Get access info for Kubernetes Dashboard
+  include_tasks: access_info.yml
+  tags: kubernetes_dashboard_access

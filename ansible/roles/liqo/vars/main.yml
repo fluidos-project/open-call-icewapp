@@ -1,0 +1,9 @@
+kubeconfig: /etc/rancher/k3s/k3s.yaml
+liqo_version: "v0.10.3" # Specified here because all clusters must use the same liqo version
+liqo_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+
+liqo_clustername_version_map:
+  v0.10.3: --cluster-name
+  v1.0.0: --cluster-id

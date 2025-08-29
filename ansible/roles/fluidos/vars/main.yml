@@ -1,0 +1,6 @@
+# Path to the kubeconfig file used for cluster access
+kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+values_file_map:
+  consumer: consumer-values.yaml
+  provider: provider-values.yaml
