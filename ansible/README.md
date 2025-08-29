@@ -30,9 +30,8 @@ Before running any playbook, **you must configure the following variables** in t
 
 ## 4. Running Playbooks
 
-1. Rename the folder `ansible/inventories/host_vars_dummy` to `ansible/inventories/host_vars` if needed.
-2. Edit the `.yml` files in `host_vars` for each node, setting the variables mentioned above.
-3. Run the main playbook:
+1. Edit the `.yml` files in `host_vars` for each node, setting the variables mentioned above.
+2. Run the main playbook:
 
 ```sh
 ansible-playbook -i inventories/inventory.ini playbook.yml
