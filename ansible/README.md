@@ -44,11 +44,7 @@ You can use tags to run only certain roles, for example:
 ansible-playbook -i inventories/inventory.ini playbook.yml --tags "k3s,helm"
 ```
 
-## 5. Inventory Organization
-
-Unlike the [reference repository](https://github.com/Electroingenium/eium_ansible/tree/main), here each node has its own configuration file in `host_vars`, instead of defining all variables in `inventory.ini`.
-
-## 6. Uninstalling Packages
+## 5. Uninstalling Packages
 
 To uninstall components, check the roles for specific uninstall tasks or remove the corresponding roles from the playbook.
 
